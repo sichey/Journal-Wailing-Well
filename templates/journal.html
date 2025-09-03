@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <title>New Journal Entry - Wailing Well</title>
+    <style>
+        .container {
+            text-align: center;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 50px;
+            border-radius: 10px;
+            box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .textbox {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .textbox textarea {
+            width: 100%;
+            padding: 15px;
+            background: none;
+            border: 1px solid #ffffff;
+            outline: none;
+            color: #ffffff;
+            font-size: 16px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+        }
+
+        .textbox input[type="file"] {
+            margin-top: 10px;
+        }
+
+        .textbox button {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: linear-gradient(45deg, #ff6f61, #ff9671);
+            border: none;
+            color: #ffffff;
+            font-size: 16px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s;
+            box-shadow: 0 4px 15px rgba(255, 111, 97, 0.4);
+        }
+
+        .textbox button:active {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 111, 97, 0.5);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            color: #ffffff;
+            font-size: 18px;
+            text-align: left;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid #ffffff;
+            color: #ffffff;
+            font-size: 16px;
+            border-radius: 10px;
+            outline: none;
+        }
+
+        button[type="submit"] {
+            margin-top: 20px;
+            padding: 15px 30px;
+            border-radius: 50px;
+            border: none;
+            background: linear-gradient(45deg, #ff6f61, #ff9671);
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.2s;
+            box-shadow: 0 4px 15px rgba(255, 111, 97, 0.4);
+        }
+
+        button[type="submit"]:hover {
+            background: linear-gradient(45deg, #ff9671, #ff6f61);
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(255, 111, 97, 0.6);
+        }
+
+        button[type="submit"]:active {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 111, 97, 0.5);
+        }
+
+        #volumeMeter {
+            width: 100%;
+            height: 20px;
+            background-color: #555;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 20px;
+            display: none; 
+        }
+
+        #volumeMeter div {
+            height: 100%;
+            background-color: #ff6f61;
+            width: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+                <!-- Flash Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <ul class="flashes">
+                        {% for category, message in messages %}
+                            <li class="{{ category }}">{{ message }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            {% endwith %}
+
+        <h2>Create a New Journal Entry</h2>
+        <a href="home" class="back-arrow">&larr;</a>
+        <form action="/journal" method="POST" enctype="multipart/form-data">
+            <label for="entry_type">Entry Type:</label>
+            <select name="entry_type" id="entry_type" required>
+                <option value="text">Text</option>
+                <option value="voice">Voice</option>
+            </select>
+            <div class="textbox" id="text-entry">
+                <textarea name="text_entry" placeholder="Write your journal entry here..." rows="10"></textarea>
+            </div>
+            <div class="textbox" id="voice-entry">
+                <label for="voice_upload">Upload Voice Recording:</label>
+                <input type="file" name="voice_entry" id="voice_upload" accept="audio/*">
+
+                <p>Or, record your voice:</p>
+                <button type="button" id="recordButton">Start Recording</button>
+                <button type="button" id="stopButton" style="display:none;">Stop Recording</button>
+                <p id="recordingStatus"></p>
+                <audio id="audioPlayback" controls style="display:none;"></audio>
+                <input type="hidden" name="voice_recording" id="voiceRecordingData">
+
+                <!-- Volume Meter -->
+                <div id="volumeMeter">
+                    <div></div>
+                </div>
+            </div>
+            <button type="submit" class="btn">Save Entry</button>
+        </form>
+    </div>
+
+    <script>
+        const entryTypeSelect = document.getElementById('entry_type');
+        const textEntry = document.getElementById('text-entry');
+        const voiceEntry = document.getElementById('voice-entry');
+        const recordButton = document.getElementById('recordButton');
+        const stopButton = document.getElementById('stopButton');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const audioPlayback = document.getElementById('audioPlayback');
+        const voiceRecordingData = document.getElementById('voiceRecordingData');
+        const volumeMeter = document.getElementById('volumeMeter');
+        const volumeBar = volumeMeter.querySelector('div');
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioContext;
+        let analyser;
+        let microphone;
+        let javascriptNode;
+
+        entryTypeSelect.addEventListener('change', function() {
+            if (this.value === 'text') {
+                textEntry.style.display = 'block';
+                voiceEntry.style.display = 'none';
+            } else if (this.value === 'voice') {
+                textEntry.style.display = 'none';
+                voiceEntry.style.display = 'block';
+            }
+        });
+
+        // Initial display based on default selection
+        entryTypeSelect.dispatchEvent(new Event('change'));
+
+        recordButton.addEventListener('click', () => {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            // Audio context for volume meter
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            microphone = audioContext.createMediaStreamSource(stream);
+            javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+
+            // Make these parameters more sensitive
+            analyser.smoothingTimeConstant = 0.15;  // Lower value makes it more responsive
+            analyser.fftSize = 512;  // Smaller FFT size increases frequency resolution
+
+            microphone.connect(analyser);
+            analyser.connect(javascriptNode);
+            javascriptNode.connect(audioContext.destination);
+
+            javascriptNode.onaudioprocess = function() {
+                let array = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(array);
+
+                // Modify the calculation of average volume to increase sensitivity
+                let average = array.reduce((a, b) => a + b) / array.length;
+
+                // Adjust this multiplication factor to make the volume meter more sensitive
+                volumeBar.style.width = Math.min((average * 150) / 256, 100) + '%';
+            };
+
+            volumeMeter.style.display = 'block'; // Show the volume meter
+
+            // Start recording
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.start();
+            recordingStatus.textContent = "Recording...";
+            recordButton.style.display = 'none';
+            stopButton.style.display = 'inline-block';
+
+            mediaRecorder.addEventListener('dataavailable', event => {
+                audioChunks.push(event.data);
+            });
+
+            mediaRecorder.addEventListener('stop', () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayback.src = audioUrl;
+                audioPlayback.style.display = 'block';
+                recordingStatus.textContent = "Recording finished!";
+                audioPlayback.controls = true;
+
+                // Convert the audio to base64 and set it as a value in a hidden input
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = () => {
+                    voiceRecordingData.value = reader.result;
+                };
+
+                // Reset for the next recording
+                audioChunks = [];
+
+                // Stop the audio context and hide the volume meter
+                audioContext.close();
+                volumeMeter.style.display = 'none';
+            });
+        });
+});
+
+
+
+        stopButton.addEventListener('click', () => {
+            mediaRecorder.stop();
+            recordButton.style.display = 'inline-block';
+            stopButton.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
